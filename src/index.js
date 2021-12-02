@@ -1,19 +1,76 @@
 const express = require('express');
 const mongoose = require("mongoose");
-const { UserModel } = require("../src/user/model");
-
+const session = require('express-session');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 var path = require('path');
 
+const { UserModel } = require("../src/user/model");
+var passport = require('passport')
+, LocalStrategy = require('passport-local').Strategy;
+
 const app = express();
 const port = 3000;
+
+app.use(express.json())
+app.use(session({
+   secret:"mysecretkey",
+   resave:false,
+   saveUninitialized:true
+}))
 
 app.use(bodyParser.json())
 app.use(express.urlencoded({extended:false}));
 
 app.set('view engine','ejs');
 app.set('views',path.join(__dirname,'app_views'));
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+passport.serializeUser(function (user, done) {
+  done(null, user.id);
+});
+
+passport.deserializeUser(function (id, done) {
+  UserModel.findById(id, function (err, user) {
+      done(err, user);
+  });
+});
+
+passport.use(new LocalStrategy({
+  usernameField: "email"
+}, function(username, password, done) {
+      
+      UserModel.findOne({ email: username }, async function (err, user) {
+          if (err) { return done(err); }
+          if (!user) { 
+            console.log('not user');
+            return done(null, false); 
+          }
+          const validPassword = await bcrypt.compare(
+            password,
+            user.password
+          );
+          if (!validPassword) {
+            return done(null, false, {
+              message: "Incorrect Password.",
+            });
+          }
+          return done(null, user);
+      });
+}
+));
+
+app.get('/login', (req,res) => {
+  res.render('login');
+})
+
+app.post('/login', passport.authenticate('local', { 
+    failureRedirect: '/user/add' 
+  }), (req, res) => {
+    res.send("User logined!");
+});
 
 app.get("/user/add", (req, res) => {
     res.render('signup');
